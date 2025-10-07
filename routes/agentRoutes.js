@@ -1,0 +1,50 @@
+import express from "express";
+import {
+  generateAgentOtp,
+  verifyAgentOtp,
+  resendAgentOtp,
+  completeAgentRegistration,
+  getAgentById,
+  updateAgentProfileImage,
+} from "../controllers/agentController.js";
+
+import {
+  authMiddleware,
+  optionalAuthMiddleware,
+} from "../middlewares/authMiddleware.js";
+import { uploadProfile } from "../middlewares/uploadMiddleware.js";
+
+const router = express.Router();
+
+/* ----------------------------------
+   🔐 OTP & Registration
+---------------------------------- */
+router.post("/generateAgentOtp", generateAgentOtp);
+router.post("/verifyAgentOtp", verifyAgentOtp);
+router.post("/resendAgentOtp", resendAgentOtp);
+router.post(
+  "/completeAgentRegistration",
+  uploadProfile.fields([
+    { name: "profileImage", maxCount: 1 },
+    { name: "aadharFrontImage", maxCount: 1 },
+    { name: "aadharBackImage", maxCount: 1 },
+    { name: "panFrontImage", maxCount: 1 },
+    { name: "panBackImage", maxCount: 1 },
+  ]),
+  completeAgentRegistration
+);
+
+/* ----------------------------------
+   👤 User Profile
+---------------------------------- */
+router.post(
+  "/updateAgentProfileImage",
+  authMiddleware,
+  uploadProfile.fields([{ name: "profileImage", maxCount: 1 }]),
+  updateAgentProfileImage
+);
+router.get("/getAgentById", authMiddleware, getAgentById);
+
+
+
+export default router;
