@@ -11,6 +11,9 @@ import {
   getNotificationsByUserId,
   updateProfileImage,
   updateProfile,
+  createQuery,
+  addCommentInQuery,
+  getQueries,
 } from "../controllers/userController.js";
 
 import {
@@ -61,5 +64,12 @@ router.get(
 router.get("/getPolicyByType", getPolicyByType);
 router.get("/getFAQList", getFAQList);
 router.get("/getFAQByFaqId", getFAQByFaqId);
+router.get
+
+
+router.post("/createQuery", authMiddleware, createQuery);
+router.post("/addCommentInQuery", authMiddleware, addCommentInQuery);
+router.get("/getQueries", authMiddleware, getQueries);
+
 
 export default router;

@@ -5,13 +5,12 @@ import Transaction from "../models/TransactionModel.js";
 import { Policy, FAQ } from "../models/PolicyModel.js";
 import Notification from "../models/NotificationModel.js";
 import Contact from "../models/Contact.js";
+import Query from "../models/QueryModel.js";
 
 const generateJwtToken = (user) => {
-  return jwt.sign(
-    { id: user._id, phone: user.phone, role: user.role },
-    process.env.JWT_SECRET,
-    { expiresIn: "7d" }
-  );
+  return jwt.sign({ id: user._id, phone: user.phone }, process.env.JWT_SECRET, {
+    expiresIn: "7d",
+  });
 };
 
 const generateSixDigitOtp = () => {
@@ -125,7 +124,7 @@ export const resendOtp = async (req, res) => {
     res.status(200).json({
       message: "OTP resent successfully",
       status: true,
-      data: generatedOtp,
+      otp: generatedOtp,
     });
   } catch (error) {
     console.error(error);
@@ -350,5 +349,64 @@ export const createContact = async (req, res) => {
     res
       .status(500)
       .json({ success: false, message: "Server Error", error: err.message });
+  }
+};
+
+export const createQuery = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+
+    const { description } = req.body;
+
+    if (!description) {
+      return res.status(400).json({ message: "Description is required" });
+    }
+    const newQuery = new Query({ userId, description });
+    await newQuery.save();
+
+    res
+      .status(200)
+      .json({ message: "Query created successfully", status: true });
+  } catch (error) {
+    console.error("Error creating query:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+export const addCommentInQuery = async (req, res) => {
+  try {
+    const { comment, queryId } = req.body;
+    const query = await Query.findById(queryId);
+    if (!query) {
+      return res.status(404).json({ message: "Query not found" });
+    }
+    query.comments.push(comment);
+    await query.save();
+    res
+      .status(200)
+      .json({ message: "Comment added successfully", status: true });
+  } catch (error) {
+    console.error("Error in addCommentInQuery:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+export const getQueries = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    const queries = await Query.find({ userId }).sort({ createdAt: -1 });
+    if (!queries) {
+      return res
+        .status(404)
+        .json({ success: false, message: "No queries found" });
+    }
+    res.status(200).json({
+      status: true,
+      data: queries,
+      message: "Queries fetched successfully",
+    });
+  } catch (error) {
+    console.error("Error fetching queries:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 };

@@ -7,7 +7,9 @@ import admin from "firebase-admin";
 import userRoutes from "./routes/userRoutes.js";
 import agentRoutes from "./routes/agentRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
-
+import chatSocket from "./sockets/chatSocket.js";
+import { Server } from "socket.io";
+import http from "http";
 
 dotenv.config();
 const app = express();
@@ -30,6 +32,14 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 //   res.send("Seraphina Wealth API is running...");
 // });
 
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+  },
+});
+chatSocket(io);
+
 // Routes
 app.use("/api/user", userRoutes);
 app.use("/api/agent", agentRoutes);
@@ -42,10 +52,9 @@ app.use("/api/admin", adminRoutes);
 //   res.sendFile(path.resolve(__dirname, "dist", "index.html"));
 // });
 
-app.use(express.json({ limit: '100mb' }));
-app.use(express.urlencoded({ limit: '100mb', extended: true }));
-
+app.use(express.json({ limit: "100mb" }));
+app.use(express.urlencoded({ limit: "100mb", extended: true }));
 
 // Start Server
 const PORT = process.env.PORT || 6009;
-app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
+server.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));

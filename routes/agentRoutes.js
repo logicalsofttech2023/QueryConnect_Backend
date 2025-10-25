@@ -13,6 +13,7 @@ import {
   optionalAuthMiddleware,
 } from "../middlewares/authMiddleware.js";
 import { uploadProfile } from "../middlewares/uploadMiddleware.js";
+import { createRoom, getAgentRooms } from "../controllers/chatRoomController.js";
 
 const router = express.Router();
 
@@ -44,6 +45,10 @@ router.post(
   updateAgentProfileImage
 );
 router.get("/getAgentById", authMiddleware, getAgentById);
+
+
+router.post("/createRoom", authMiddleware, createRoom);
+router.get("/getAgentRooms", authMiddleware, getAgentRooms);
 
 
 

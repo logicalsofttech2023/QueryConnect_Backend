@@ -216,7 +216,12 @@ export const completeAgentRegistration = async (req, res) => {
 
 export const getAgentById = async (req, res) => {
   try {
-    const agentId = req.agent.id;
+    const agentId = req.user.id;
+
+    if (!agentId) {
+      return res.status(401).json({ status: false, message: "Unauthorized" });
+    }    
+    
     let agent = await Agent.findById(agentId).select("-otp -otpExpiresAt"); // Exclude sensitive fields
     if (!agent) {
       return res.status(404).json({ message: "Agent not found", status: false });
@@ -226,6 +231,7 @@ export const getAgentById = async (req, res) => {
       .status(200)
       .json({ message: "Agent fetched successfully", status: true, data: agent });
   } catch (error) {
+    console.error("Error in getAgentById:", error);
     res.status(500).json({ message: "Server Error", status: false });
   }
 };
