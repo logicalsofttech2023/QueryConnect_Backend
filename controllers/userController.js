@@ -6,6 +6,7 @@ import { Policy, FAQ } from "../models/PolicyModel.js";
 import Notification from "../models/NotificationModel.js";
 import Contact from "../models/Contact.js";
 import Query from "../models/QueryModel.js";
+import admin from "../config/firebase.js";
 
 const generateJwtToken = (user) => {
   return jwt.sign({ id: user._id, phone: user.phone }, process.env.JWT_SECRET, {
@@ -64,16 +65,24 @@ export const generateOtp = async (req, res) => {
 
 export const verifyOtp = async (req, res) => {
   try {
-    const { phone, otp, firebaseToken } = req.body;
+    const {
+      phone,
+      otp,
+      firebaseToken,
+      description,
+      startTime,
+      endTime,
+      industry,
+    } = req.body;
 
     if (!phone || !otp) {
       return res.status(400).json({
-        message: "phone, and otp are required",
+        message: "phone and otp are required",
         status: false,
       });
     }
 
-    let user = await User.findOne({ phone });
+    const user = await User.findOne({ phone });
 
     if (!user || user.otp !== otp) {
       return res.status(400).json({ message: "Invalid OTP", status: false });
@@ -85,10 +94,24 @@ export const verifyOtp = async (req, res) => {
 
     user.otpExpiresAt = "";
     user.isVerified = true;
-    user.firebaseToken = firebaseToken;
+    if (firebaseToken) user.firebaseToken = firebaseToken;
     await user.save();
 
-    let token = generateJwtToken(user);
+    const queryData = {
+      userId: user._id,
+    };
+
+    if (description) queryData.description = description;
+    if (startTime) queryData.startTime = startTime;
+    if (endTime) queryData.endTime = endTime;
+    if (industry) queryData.industry = industry;
+
+    if (description || startTime || endTime) {
+      const newQuery = new Query(queryData);
+      await newQuery.save();
+    }
+
+    const token = generateJwtToken(user);
 
     res.status(200).json({
       message: "OTP verified successfully",
@@ -97,6 +120,7 @@ export const verifyOtp = async (req, res) => {
       data: user,
     });
   } catch (error) {
+    console.error("Error verifying OTP:", error);
     res.status(500).json({ message: "Server Error", status: false });
   }
 };
@@ -129,6 +153,57 @@ export const resendOtp = async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Server Error", status: false });
+  }
+};
+
+export const firebaseLogin = async (req, res) => {
+  try {
+    const { idToken, description, startTime, endTime, industry } = req.body;
+
+    if (!idToken) {
+      return res
+        .status(400)
+        .json({ status: false, message: "idToken required" });
+    }
+    const decoded = await admin.auth().verifyIdToken(idToken);
+    const { email, displayName, picture } = decoded;
+
+    let user = await User.findOne({ userEmail: email });
+
+    if (!user) {
+      user = new User({
+        fullName: displayName || "",
+        userEmail: email,
+        profileImage: picture,
+        isVerified: true,
+      });
+      await user.save();
+      const queryData = {
+        userId: user._id,
+      };
+
+      if (description) queryData.description = description;
+      if (startTime) queryData.startTime = startTime;
+      if (endTime) queryData.endTime = endTime;
+      if (industry) queryData.industry = industry;
+
+      if (description || startTime || endTime) {
+        const newQuery = new Query(queryData);
+        await newQuery.save();
+      }
+    }
+
+    const token = generateJwtToken(user);
+
+    res.status(200).json({
+      status: true,
+      message: "Firebase login successful",
+      token,
+      data: user,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ status: false, message: "Firebase login failed" });
   }
 };
 
@@ -177,14 +252,27 @@ export const updateProfile = async (req, res) => {
 export const getUserById = async (req, res) => {
   try {
     const userId = req.user.id;
-    let user = await User.findById(userId).select("-otp -otpExpiresAt"); // Exclude sensitive fields
+    let user = await User.findById(userId).select("-otp -otpExpiresAt");
+    let totalActiveQueries = await Query.countDocuments({
+      userId,
+      status: "Active",
+    });
+    let totalInActiveQueries = await Query.countDocuments({
+      userId,
+      status: "Inactive",
+    });
     if (!user) {
       return res.status(404).json({ message: "User not found", status: false });
     }
+    const data = {
+      user,
+      totalActiveQueries,
+      totalInActiveQueries,
+    };
 
     res
       .status(200)
-      .json({ message: "User fetched successfully", status: true, data: user });
+      .json({ message: "User fetched successfully", status: true, data });
   } catch (error) {
     res.status(500).json({ message: "Server Error", status: false });
   }
@@ -356,12 +444,20 @@ export const createQuery = async (req, res) => {
   try {
     const userId = req.user?.id;
 
-    const { description } = req.body;
+    const { description, startTime, endTime, industry } = req.body;
 
-    if (!description) {
-      return res.status(400).json({ message: "Description is required" });
+    if (!description || !industry) {
+      return res
+        .status(400)
+        .json({ message: "Description, industry is required" });
     }
-    const newQuery = new Query({ userId, description });
+    const newQuery = new Query({
+      userId,
+      description,
+      startTime,
+      endTime,
+      industry,
+    });
     await newQuery.save();
 
     res
@@ -395,6 +491,7 @@ export const getQueries = async (req, res) => {
   try {
     const userId = req.user?.id;
     const queries = await Query.find({ userId }).sort({ createdAt: -1 });
+    const user = await User.findById(userId);
     if (!queries) {
       return res
         .status(404)
@@ -402,7 +499,10 @@ export const getQueries = async (req, res) => {
     }
     res.status(200).json({
       status: true,
-      data: queries,
+      data: {
+        name: user?.fullName || "",
+        queries: queries,
+      },
       message: "Queries fetched successfully",
     });
   } catch (error) {

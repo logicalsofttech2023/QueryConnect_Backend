@@ -5,10 +5,10 @@ const userSchema = new mongoose.Schema(
     fullName: {
       type: String,
       trim: true,
+      default: "Dummy",
     },
     userEmail: {
       type: String,
-      unique: true,
     },
     dob: {
       type: String,
@@ -16,6 +16,7 @@ const userSchema = new mongoose.Schema(
     gender: {
       type: String,
       enum:  ["Male", "Female"],
+      default: "Male",
     },
     phone: {
       type: String,
@@ -23,7 +24,7 @@ const userSchema = new mongoose.Schema(
     },
     profileImage: {
       type: String,
-      default: "",
+      default: "https://cdn.pixabay.com/photo/2023/02/18/11/00/icon-7797704_640.png",
     },
     otp: {
       type: String,

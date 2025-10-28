@@ -14,6 +14,7 @@ import {
   createQuery,
   addCommentInQuery,
   getQueries,
+  firebaseLogin
 } from "../controllers/userController.js";
 
 import {
@@ -30,6 +31,8 @@ const router = express.Router();
 router.post("/generateOtp", generateOtp);
 router.post("/verifyOtp", verifyOtp);
 router.post("/resendOtp", resendOtp);
+router.post("/socialLogin", firebaseLogin);
+
 
 
 /* ----------------------------------

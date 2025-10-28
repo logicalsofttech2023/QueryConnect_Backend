@@ -8,6 +8,9 @@ const querySchema = new mongoose.Schema(
       required: true,
     },
     description: { type: String, required: true },
+    startTime: { type: String, default: "12:00 PM" },
+    endTime: { type: String, default: "05:00 PM" },
+    industry: { type: String, required: true },
     status: {
       type: String,
       enum: ["Active", "Inactive"],
