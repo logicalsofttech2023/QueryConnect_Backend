@@ -3,9 +3,13 @@ import Agent from "../models/AgentModel.js";
 import crypto from "crypto";
 
 const generateJwtToken = (agent) => {
-  return jwt.sign({ id: agent._id, phone: agent.phone }, process.env.JWT_SECRET, {
-    expiresIn: "7d",
-  });
+  return jwt.sign(
+    { id: agent._id, phone: agent.phone },
+    process.env.JWT_SECRET,
+    {
+      expiresIn: "7d",
+    }
+  );
 };
 
 const generateSixDigitOtp = () => {
@@ -18,128 +22,190 @@ const generateTransactionId = () => {
   return formattedId;
 };
 
-export const generateAgentOtp = async (req, res) => {
+export const generateOtp = async (req, res) => {
   try {
-    const { phone } = req.body;
-    if (!phone) {
-      return res.status(400).json({
-        message: "phone, is required",
-        status: false,
-      });
+    const { agentEmail, phone } = req.body;
+
+    if (!agentEmail && !phone) {
+      return res
+        .status(400)
+        .json({ message: "Email or phone is required", status: false });
     }
 
-    let agent = await Agent.findOne({ phone });
+    const agent = await Agent.findOne({
+      $or: [{ agentEmail }, { phone }],
+    });
 
-    const generatedOtp = generateSixDigitOtp();
-    const otpExpiresAt = new Date(Date.now() + 5 * 60 * 1000);
+    if (!agent) {
+      return res
+        .status(404)
+        .json({ message: "Agent not found", status: false });
+    }
 
-    if (agent) {
-      agent.otp = generatedOtp;
-      agent.otpExpiresAt = otpExpiresAt;
+    const otp = generateSixDigitOtp();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+    // Assign OTP based on login method
+    if (agentEmail) {
+      agent.emailOtp = otp;
+      agent.emailOtpExpiresAt = expiresAt;
     } else {
-      agent = new Agent({
-        phone,
-        otp: generatedOtp,
-        otpExpiresAt,
-      });
+      agent.phoneOtp = otp;
+      agent.phoneOtpExpiresAt = expiresAt;
     }
 
     await agent.save();
 
-    res.status(200).json({
-      message: "OTP generated and sent successfully",
+    return res.status(200).json({
       status: true,
-      otp: generatedOtp,
+      message: "Login OTP generated successfully",
+      otp,
     });
-  } catch (error) {
-    console.log(error);
-    res.status(500).json({ message: "Server Error", status: false });
+  } catch (err) {
+    console.error("Error in generateLoginOtp:", err);
+    return res.status(500).json({ message: "Server Error", status: false });
   }
 };
 
-export const verifyAgentOtp = async (req, res) => {
+export const verifyOtp = async (req, res) => {
   try {
-    const { phone, otp, firebaseToken } = req.body;
+    const { agentEmail, phone, otp, firebaseToken } = req.body;
 
-    if (!phone || !otp) {
-      return res.status(400).json({
-        message: "phone, and otp are required",
+    if (!otp || (!agentEmail && !phone)) {
+      return res
+        .status(400)
+        .json({ message: "Email/Phone and OTP required", status: false });
+    }
+
+    const agent = await Agent.findOne({
+      $or: [{ agentEmail }, { phone }],
+    });
+
+    if (!agent) {
+      return res
+        .status(404)
+        .json({ message: "Agent not found", status: false });
+    }
+
+    // Verify OTP based on login method
+    let valid = false;
+    if (agentEmail) {
+      if (
+        agent.emailOtp === otp &&
+        new Date() < new Date(agent.emailOtpExpiresAt)
+      ) {
+        valid = true;
+        agent.emailVerified = true;
+        agent.emailOtp = null;
+        agent.emailOtpExpiresAt = null;
+      }
+    } else {
+      if (
+        agent.phoneOtp === otp &&
+        new Date() < new Date(agent.phoneOtpExpiresAt)
+      ) {
+        valid = true;
+        agent.phoneVerified = true;
+        agent.phoneOtp = null;
+        agent.phoneOtpExpiresAt = null;
+      }
+    }
+
+    if (!valid) {
+      return res
+        .status(400)
+        .json({ message: "Invalid or expired OTP", status: false });
+    }
+
+    // Update Firebase token if provided
+    if (firebaseToken) {
+      agent.firebaseToken = firebaseToken;
+    }
+
+    await agent.save();
+
+    // Check admin verification before allowing login
+    if (agent.adminVerified !== "approved") {
+      return res.status(403).json({
         status: false,
+        message: "Your profile is pending admin approval.",
       });
     }
 
-    let agent = await Agent.findOne({ phone });
+    // Generate JWT token
+    const token = generateJwtToken(agent);
 
-    if (!agent || agent.otp !== otp) {
-      return res.status(400).json({ message: "Invalid OTP", status: false });
-    }
-
-    if (new Date() > new Date(agent.otpExpiresAt)) {
-      return res.status(400).json({ message: "OTP expired", status: false });
-    }
-
-    agent.otpExpiresAt = "";
-    agent.isVerified = true;
-    agent.firebaseToken = firebaseToken;
-    await agent.save();
-
-    let token = "";
-    let agentExit = false;
-
-    if (agent.fullName) {
-      agentExit = true;
-
-      if (agent.adminVerified !== "approved") {
-        return res.status(403).json({
-          message: "Your account is not verified by admin yet.",
-          status: false,
-          agentExit: true,
-        });
-      }
-
-      token = generateJwtToken(agent);
-    }
-
-    res.status(200).json({
-      message: "OTP verified successfully",
+    return res.status(200).json({
       status: true,
+      message: "Login successful",
       token,
-      agentExit,
       data: agent,
     });
-  } catch (error) {
-    res.status(500).json({ message: "Server Error", status: false });
+  } catch (err) {
+    console.error("Error in verifyLoginOtp:", err);
+    return res.status(500).json({ message: "Server Error", status: false });
   }
 };
 
 export const resendAgentOtp = async (req, res) => {
   try {
-    const { phone } = req.body;
-    if (!phone) {
+    const { phone, agentEmail } = req.body;
+
+    // ✅ Input validation
+    if (!phone && !agentEmail) {
       return res.status(400).json({
-        message: "phone are required",
+        message: "Either phone or email is required",
         status: false,
       });
     }
 
-    let agent = await Agent.findOne({ phone });
-    if (!agent) {
-      return res.status(400).json({ message: "agent not found", status: false });
+    // ✅ Find the agent
+    let agent;
+    if (phone) {
+      agent = await Agent.findOne({ phone });
+    } else {
+      agent = await Agent.findOne({ agentEmail });
     }
 
+    if (!agent) {
+      return res.status(404).json({
+        message: "Agent not found",
+        status: false,
+      });
+    }
+
+    // ✅ Generate OTP & set expiry
     const generatedOtp = generateSixDigitOtp();
-    agent.otp = generatedOtp;
-    agent.otpExpiresAt = new Date(Date.now() + 5 * 60 * 1000);
+    const expiryTime = new Date(Date.now() + 5 * 60 * 1000); // 5 min
+
+    // ✅ Assign OTP to correct field
+    let otpType = "";
+    if (phone) {
+      agent.phoneOtp = generatedOtp;
+      agent.phoneOtpExpiresAt = expiryTime;
+      otpType = "phone";
+    } else {
+      agent.emailOtp = generatedOtp;
+      agent.emailOtpExpiresAt = expiryTime;
+      otpType = "email";
+    }
+
     await agent.save();
 
+    // ✅ Respond
     res.status(200).json({
-      message: "OTP resent successfully",
       status: true,
-      data: generatedOtp,
+      message: `${
+        otpType === "phone" ? "Mobile" : "Email"
+      } OTP resent successfully`,
+      otp: generatedOtp, // ⚠️ Remove this in production
+      type: otpType,
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Server Error", status: false });
+    console.error("Error in resendAgentOtp:", error);
+    res.status(500).json({
+      status: false,
+      message: "Server Error",
+    });
   }
 };
 
@@ -148,11 +214,12 @@ export const completeAgentRegistration = async (req, res) => {
     const {
       fullName,
       agentEmail,
-      dob,
-      gender,
       phone,
+      sector,
       aadharNumber,
       firebaseToken,
+      paymentId,
+      paymentStatus = "success",
     } = req.body;
 
     const files = req.files;
@@ -160,56 +227,54 @@ export const completeAgentRegistration = async (req, res) => {
     const aadharFrontImage = files?.aadharFrontImage?.[0]?.filename || "";
     const aadharBackImage = files?.aadharBackImage?.[0]?.filename || "";
 
-    let agent = await Agent.findOne({ phone });
-
-    if (!agent || !agent.isVerified) {
-      return res
-        .status(400)
-        .json({ message: "Agent not verified", status: false });
-    }
-
-    if (!fullName) {
-      return res
-        .status(400)
-        .json({ message: "First and last names are required", status: false });
-    }
-
-    // Update profile fields
-    agent.fullName = fullName;
-    agent.dob = dob || "";
-    agent.gender = gender || "";
-    agent.agentEmail = agentEmail || "";
-    agent.aadharNumber = aadharNumber || "";
-    agent.firebaseToken = firebaseToken || "";
-    agent.profileImage = profileImage;
-    agent.aadharFrontImage = aadharFrontImage;
-    agent.aadharBackImage = aadharBackImage;
-
-    await agent.save();
-
-    // Admin approval check before generating token
-    if (agent.adminVerified !== "approved") {
-      return res.status(403).json({
+    if (!fullName || !agentEmail || !phone || !sector || !aadharNumber) {
+      return res.status(400).json({
         message:
-          "Your profile is submitted successfully and is pending admin approval.",
-        status: true,
-        agentExit: true,
-        token: "",
+          "All fields are required: fullName, agentEmail, phone, sector, aadharNumber",
+        status: false,
       });
     }
 
-    // Generate token only if admin has approved
-    const token = generateJwtToken(agent);
+    if (!aadharFrontImage || !aadharBackImage) {
+      return res.status(400).json({
+        message: "Both Aadhaar front and back images are required",
+        status: false,
+      });
+    }
+
+    let agent = await Agent.findOne({ phone, phoneVerified: true });
+
+    if (!agent) {
+      return res.status(400).json({
+        message: "Phone number not verified. Please verify your phone first.",
+        status: false,
+      });
+    }
+
+    agent.fullName = fullName;
+    agent.agentEmail = agentEmail;
+    agent.sector = sector;
+    agent.aadharNumber = aadharNumber;
+    agent.profileImage = profileImage;
+    agent.aadharFrontImage = aadharFrontImage;
+    agent.aadharBackImage = aadharBackImage;
+    agent.firebaseToken = firebaseToken || agent.firebaseToken;
+
+    // Payment details
+    agent.paymentId = paymentId;
+    agent.paymentStatus = paymentStatus;
+    agent.paymentDate = new Date();
+
+    await agent.save();
 
     res.status(200).json({
-      message: "agent registered successfully",
+      message:
+        "Agent registration completed successfully! Your profile is pending admin approval.",
       status: true,
-      token,
-      agentExit: true,
       data: agent,
     });
   } catch (error) {
-    console.error("Error in completeRegistration:", error);
+    console.error("Error in completeAgentRegistration:", error);
     res.status(500).json({ message: "Server Error", status: false });
   }
 };
@@ -220,16 +285,20 @@ export const getAgentById = async (req, res) => {
 
     if (!agentId) {
       return res.status(401).json({ status: false, message: "Unauthorized" });
-    }    
-    
-    let agent = await Agent.findById(agentId).select("-otp -otpExpiresAt"); // Exclude sensitive fields
-    if (!agent) {
-      return res.status(404).json({ message: "Agent not found", status: false });
     }
 
-    res
-      .status(200)
-      .json({ message: "Agent fetched successfully", status: true, data: agent });
+    let agent = await Agent.findById(agentId).select("-otp -otpExpiresAt"); // Exclude sensitive fields
+    if (!agent) {
+      return res
+        .status(404)
+        .json({ message: "Agent not found", status: false });
+    }
+
+    res.status(200).json({
+      message: "Agent fetched successfully",
+      status: true,
+      data: agent,
+    });
   } catch (error) {
     console.error("Error in getAgentById:", error);
     res.status(500).json({ message: "Server Error", status: false });
@@ -246,7 +315,9 @@ export const updateAgentProfileImage = async (req, res) => {
 
     const agent = await Agent.findById(agentId);
     if (!agent) {
-      return res.status(404).json({ status: false, message: "Agent not found" });
+      return res
+        .status(404)
+        .json({ status: false, message: "Agent not found" });
     }
 
     const file = req.file || req.files?.profileImage?.[0];

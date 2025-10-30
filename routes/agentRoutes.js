@@ -1,7 +1,7 @@
 import express from "express";
 import {
-  generateAgentOtp,
-  verifyAgentOtp,
+  generateOtp,
+  verifyOtp,
   resendAgentOtp,
   completeAgentRegistration,
   getAgentById,
@@ -20,8 +20,8 @@ const router = express.Router();
 /* ----------------------------------
    🔐 OTP & Registration
 ---------------------------------- */
-router.post("/generateAgentOtp", generateAgentOtp);
-router.post("/verifyAgentOtp", verifyAgentOtp);
+router.post("/generateOtp", generateOtp);
+router.post("/verifyOtp", verifyOtp);
 router.post("/resendAgentOtp", resendAgentOtp);
 router.post(
   "/completeAgentRegistration",

@@ -52,6 +52,20 @@ app.use("/api/admin", adminRoutes);
 //   res.sendFile(path.resolve(__dirname, "dist", "index.html"));
 // });
 
+// Serve admin React build
+// const adminBuildPath = path.join(__dirname, "admin", "build");
+// app.use("/admin", express.static(adminBuildPath));
+// app.get("/admin/*", (req, res) => {
+//   res.sendFile(path.join(adminBuildPath, "index.html"));
+// });
+
+// Serve main user React build
+const clientBuildPath = path.join(__dirname, "client", "dist");
+app.use(express.static(clientBuildPath));
+app.get("*", (req, res) => {
+  res.sendFile(path.join(clientBuildPath, "index.html"));
+});
+
 app.use(express.json({ limit: "100mb" }));
 app.use(express.urlencoded({ limit: "100mb", extended: true }));
 
